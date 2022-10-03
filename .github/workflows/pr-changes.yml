@@ -1,16 +1,16 @@
 name: PR latest commit
-
 on: push
-
 jobs:
-  pr_latest_commit:
-    name: PR the latest commit to LibreELEC.tv github repository
+  get_latest_commit:
+    name: Get the latest commit from Repository
     runs-on: ubuntu-latest
+    outputs:
+      upstream_commit: ${{ steps.set-variable.outputs.upstream_commit }}
+      upstream_file_sha256: ${{ steps.set-variable.outputs.upstream_file_sha256 }}
     steps:
       - uses: actions/checkout@v3
-
       - name: Get sha and canonical download url for latest version of certdata.txt file
-        id: latest_certdata
+        id: set-variable
         run: |
           upstream_repo="CvH/gha-iwlwifi-firmware"
           upstream_branch="master"
@@ -33,28 +33,33 @@ jobs:
           # download upstream package and check sha256
           rm -f /tmp/file.tar.gz
           curl -sS -L -o /tmp/file.tar.gz ${le_pkg_url/'${PKG_VERSION}'/${upstream_commit}}
-          upstream_file_sha256="22$(sha256sum /tmp/file.tar.gz | cut -d" " -f1)"
+          upstream_file_sha256="$(sha256sum /tmp/file.tar.gz | cut -d" " -f1)"
+          echo "::set-output name=upstream_commit::${upstream_commit}"
+          echo "::set-output name=upstream_file_sha256::${upstream_file_sha256}"
 
-          script_repo_path="$(pwd)/LE-repo"
-          git clone --depth 1 https://github.com/LibreELEC/LibreELEC.tv.git ${script_repo_path}
+  create_commit:
+    name: PR the latest commit to LibreELEC.tv github repository
+    needs: get_latest_commit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 1
+          repository: "CvH/LibreELEC.tv"
 
-          sed -e "s|^PKG_VERSION=.*|PKG_VERSION=\"${upstream_commit}\"|" \
-              -e "s|^PKG_SHA256=.*|PKG_SHA256=\"${upstream_file_sha256}\"|" \
-              -i ${script_repo_path}/${le_package_path}/package.mk
-          echo "upstream_commit=${upstream_commit}" >> $GITHUB_ENV
-          echo "upstream_file_sha256=${upstream_file_sha256}" >> $GITHUB_ENV
-      - name: Echo vars
-        id: head_branch
+      - name: Change stuff at files
         run: |
-          echo "${{ env.upstream_commit }}"
-          echo "${{ env.upstream_file_sha256 }}"
+          sed -e "s|^PKG_VERSION=.*|PKG_VERSION=\"${{ needs.get_latest_commit.outputs.upstream_commit }}\"|" \
+            -e "s|^PKG_SHA256=.*|PKG_SHA256=\"${{ needs.get_latest_commit.outputs.upstream_file_sha256 }}\"|" \
+            -i packages/linux-firmware/iwlwifi-firmware/package.mk
+          cat packages/linux-firmware/iwlwifi-firmware/package.mk
       - name: Create Pull Request
         id: cpr
         uses: peter-evans/create-pull-request@v4
         with:
           token: ${{ secrets.GHA-PR-Token }}
           commit-message: |
-            update to: ${sha}
+            update to: 1235
           committer: CvH <namerp@googlemail.com>
           author: CvH <namerp@googlemail.com>
           reviewers: CvH <namerp@googlemail.com>
@@ -62,7 +67,7 @@ jobs:
           signoff: false
           branch-suffix: short-commit-hash
           delete-branch: true
-          title: "cacert.pem CA bundle: update to ${sha}"
+          title: "change blah"
           body: |
             This pull-request was auto-generated.
           draft: false
