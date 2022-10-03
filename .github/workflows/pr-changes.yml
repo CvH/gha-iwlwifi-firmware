@@ -55,7 +55,8 @@ jobs:
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v4
         with:
-            token: ${{ secrets.GITHUB_TOKEN }}
+            token: ${{ secrets.GHA-PR-Token }}
+            push-to-fork: CvH/LibreELEC.tv
             commit-message: Update dependencies
             title: Update dependencies
             body: |
