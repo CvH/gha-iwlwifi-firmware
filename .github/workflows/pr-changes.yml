@@ -1,0 +1,68 @@
+name: PR latest commit
+
+on: push
+
+jobs:
+  pr_latest_commit:
+    name: PR the latest commit to LibreELEC.tv github repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Get sha and canonical download url for latest version of certdata.txt file
+        id: latest_certdata
+        run: |
+          upstream_repo="CvH/gha-iwlwifi-firmware"
+          upstream_branch="master"
+          le_branch="master"
+          le_package_path="packages/linux-firmware/iwlwifi-firmware"
+
+          # get package infoprmation from LE repository
+          le_package_raw="$(curl -sS -L https://raw.githubusercontent.com/CvH/LibreELEC.tv/${le_branch}/${le_package_path}/package.mk)"
+          le_pkg_version="$(echo -e "${le_package_raw}" | grep -oP -m 1 '(?<=PKG_VERSION=\").*(?=\")')"
+          le_pkg_sha256="$(echo -e "${le_package_raw}" | grep -oP -m 1 '(?<=PKG_SHA256=\").*(?=\")')"
+          le_pkg_url="$(echo -e "${le_package_raw}" | grep -oP -m 1 '(?<=PKG_URL=\").*(?=\")')"
+
+          echo "le_pkg_version ${le_pkg_version}"
+          echo "le_pkg_sha256 ${le_pkg_sha256}"
+          echo "le_pkg_url ${le_pkg_url}"
+
+          # get information from upstream repository
+          upstream_commit="$(curl -sS -L https://api.github.com/repos/${upstream_repo}/branches/${upstream_branch} | grep -oP -m 1 '(?<=\"sha\": ").*(?=\")')"
+
+          # download upstream package and check sha256
+          rm -f /tmp/file.tar.gz
+          curl -sS -L -o /tmp/file.tar.gz ${le_pkg_url/'${PKG_VERSION}'/${upstream_commit}}
+          upstream_file_sha256="22$(sha256sum /tmp/file.tar.gz | cut -d" " -f1)"
+
+          script_repo_path="$(pwd)/LE-repo"
+          git clone --depth 1 https://github.com/LibreELEC/LibreELEC.tv.git ${script_repo_path}
+
+          sed -e "s|^PKG_VERSION=.*|PKG_VERSION=\"${upstream_commit}\"|" \
+              -e "s|^PKG_SHA256=.*|PKG_SHA256=\"${upstream_file_sha256}\"|" \
+              -i ${script_repo_path}/${le_package_path}/package.mk
+          echo "upstream_commit=${upstream_commit}" >> $GITHUB_ENV
+          echo "upstream_file_sha256=${upstream_file_sha256}" >> $GITHUB_ENV
+      - name: Echo vars
+        id: head_branch
+        run: |
+          echo "${{ env.upstream_commit }}"
+          echo "${{ env.upstream_file_sha256 }}"
+      - name: Create Pull Request
+        id: cpr
+        uses: peter-evans/create-pull-request@v4
+        with:
+          token: ${{ secrets.GHA-PR-Token }}
+          commit-message: |
+            update to: ${sha}
+          committer: CvH <namerp@googlemail.com>
+          author: CvH <namerp@googlemail.com>
+          reviewers: CvH <namerp@googlemail.com>
+          labels: "github-action"
+          signoff: false
+          branch-suffix: short-commit-hash
+          delete-branch: true
+          title: "cacert.pem CA bundle: update to ${sha}"
+          body: |
+            This pull-request was auto-generated.
+          draft: false
